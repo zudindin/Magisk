@@ -1,12 +1,17 @@
-use crate::payload::extract_boot_from_payload;
-use crate::sign::{sha1_hash, verify_boot_image};
-use argh::FromArgs;
-use base::{cmdline_logging, libc::umask, log_err, map_args, raw_cstr, EarlyExitExt, LoggedResult, MappedFile, ResultExt, Utf8CStr};
-use std::ffi::c_char;
-use crate::cpio::cpio_commands;
-use crate::dtb::dtb_commands;
-use crate::ffi::{cleanup, compress, decompress_raw, formats, repack, sign, split_image_dtb, unpack, verify};
+use crate::cpio::{cpio_commands, print_cpio_usage};
+use crate::dtb::{dtb_commands, print_dtb_usage};
+use crate::ffi::{
+    cleanup, compress, decompress_raw, formats, repack, sign, split_image_dtb, unpack, verify
+};
 use crate::patch::hexpatch;
+use crate::payload::extract_boot_from_payload;
+use crate::sign::sha1_hash;
+use argh::FromArgs;
+use base::{
+    cmdline_logging, libc::umask, log_err, map_args, raw_cstr, EarlyExitExt, LoggedResult,
+    MappedFile, ResultExt, Utf8CStr,
+};
+use std::ffi::c_char;
 
 #[derive(FromArgs)]
 struct Cli {
@@ -245,7 +250,8 @@ Supported actions:
 
     {1}
 "#,
-        cmd, formats()
+        cmd,
+        formats()
     );
 }
 
@@ -274,14 +280,22 @@ pub unsafe extern "C" fn main(
             cmds[3] = fmt;
         }
 
-        let mut cli = Cli::from_args(&[cmds[0]], &cmds[1..]).on_early_exit(|| print_usage(cmds[0]));
+        let mut cli = Cli::from_args(&[cmds[0]], &cmds[1..]).on_early_exit(|| match cmds.get(1) {
+            Some(&"dtb") => print_dtb_usage(),
+            Some(&"cpio") => print_cpio_usage(),
+            _ => print_usage(cmds[0]),
+        });
         match cli.action {
             Action::Unpack(Unpack {
                 no_decompress,
                 dump_header,
                 ref mut img,
             }) => {
-                return unpack(Utf8CStr::from_string(img).as_ptr(), no_decompress, dump_header);
+                return unpack(
+                    Utf8CStr::from_string(img).as_ptr(),
+                    no_decompress,
+                    dump_header,
+                );
             }
             Action::Repack(Repack {
                 no_compress,
@@ -310,7 +324,9 @@ pub unsafe extern "C" fn main(
                 };
                 return sign(
                     Utf8CStr::from_string(img).as_ptr(),
-                    args.first_mut().map(|x| Utf8CStr::from_string(x).as_ptr()).unwrap_or(raw_cstr!("/boot")),
+                    args.first_mut()
+                        .map(|x| Utf8CStr::from_string(x).as_ptr())
+                        .unwrap_or(raw_cstr!("/boot")),
                     pem, pk8
                 )
             }
@@ -337,18 +353,14 @@ pub unsafe extern "C" fn main(
                     Err(log_err!("Failed to patch"))?;
                 }
             }
-            Action::Cpio(Cpio {
-                ref cmds,
-            }) => {
+            Action::Cpio(Cpio { ref cmds }) => {
                 return if cpio_commands(&cmds.iter().map(|x| x.as_str()).collect::<Vec<_>>()) {
                     0
                 } else {
                     1
                 }
             }
-            Action::Dtb(Dtb {
-                ref cmds,
-            }) => {
+            Action::Dtb(Dtb { ref cmds }) => {
                 return if dtb_commands(&cmds.iter().map(|x| x.as_str()).collect::<Vec<_>>()) {
                     0
                 } else {
@@ -378,14 +390,25 @@ pub unsafe extern "C" fn main(
                 ref mut file,
                 ref mut out,
             }) => {
-                decompress_raw(Utf8CStr::from_string(file).as_mut_ptr(), out.as_mut().map(|x| Utf8CStr::from_string(x).as_ptr()).unwrap_or(std::ptr::null()));
+                decompress_raw(
+                    Utf8CStr::from_string(file).as_mut_ptr(),
+                    out.as_mut()
+                        .map(|x| Utf8CStr::from_string(x).as_ptr())
+                        .unwrap_or(std::ptr::null()),
+                );
             }
             Action::Compress(Compress {
                 ref mut file,
                 ref mut format,
                 ref mut out,
             }) => {
-                compress(Utf8CStr::from_string(format).as_ptr(), Utf8CStr::from_string(file).as_ptr(), out.as_mut().map(|x| Utf8CStr::from_string(x).as_ptr()).unwrap_or(std::ptr::null()));
+                compress(
+                    Utf8CStr::from_string(format).as_ptr(),
+                    Utf8CStr::from_string(file).as_ptr(),
+                    out.as_mut()
+                        .map(|x| Utf8CStr::from_string(x).as_ptr())
+                        .unwrap_or(std::ptr::null()),
+                );
             }
         }
     };
