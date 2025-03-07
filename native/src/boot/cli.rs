@@ -1,15 +1,15 @@
 use crate::cpio::{cpio_commands, print_cpio_usage};
-use crate::dtb::{dtb_commands, print_dtb_usage, DtbAction};
+use crate::dtb::{DtbAction, dtb_commands, print_dtb_usage};
 use crate::ffi::{
-    cleanup, compress, decompress_raw, formats, repack, sign, split_image_dtb, unpack, verify
+    cleanup, compress, decompress_raw, formats, repack, sign, split_image_dtb, unpack, verify,
 };
 use crate::patch::hexpatch;
 use crate::payload::extract_boot_from_payload;
 use crate::sign::sha1_hash;
 use argh::FromArgs;
 use base::{
-    cmdline_logging, libc::umask, log_err, map_args, raw_cstr, EarlyExitExt, LoggedResult,
-    MappedFile, ResultExt, Utf8CStr,
+    EarlyExitExt, LoggedResult, MappedFile, ResultExt, Utf8CStr, cmdline_logging, libc::umask,
+    log_err, map_args, raw_cstr,
 };
 use std::ffi::c_char;
 
@@ -259,14 +259,10 @@ Supported actions:
     );
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn main(
-    argc: i32,
-    argv: *const *const c_char,
-    _envp: *const *const c_char,
-) -> i32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn main(argc: i32, argv: *const *const c_char, _envp: *const *const c_char) -> i32 {
     cmdline_logging();
-    umask(0);
+    unsafe { umask(0) };
     let res: LoggedResult<()> = try {
         let mut cmds = map_args(argc, argv)?;
         if argc < 2 {
@@ -295,44 +291,61 @@ pub unsafe extern "C" fn main(
                 dump_header,
                 ref mut img,
             }) => {
-                return unpack(
-                    Utf8CStr::from_string(img).as_ptr(),
-                    no_decompress,
-                    dump_header,
-                );
+                return unsafe {
+                    unpack(
+                        Utf8CStr::from_string(img).as_ptr(),
+                        no_decompress,
+                        dump_header,
+                    )
+                };
             }
             Action::Repack(Repack {
                 no_compress,
                 ref mut img,
                 ref mut out,
             }) => {
-                repack(
-                    Utf8CStr::from_string(img).as_ptr(),
-                    Utf8CStr::from_string(out).as_ptr(),
-                    no_compress,
-                );
+                unsafe {
+                    repack(
+                        Utf8CStr::from_string(img).as_ptr(),
+                        Utf8CStr::from_string(out).as_ptr(),
+                        no_compress,
+                    )
+                };
             }
             Action::Verify(Verify {
                 ref mut img,
                 ref mut cert,
             }) => {
-                return verify(Utf8CStr::from_string(img).as_ptr(), cert.as_mut().map(|x| Utf8CStr::from_string(x).as_ptr()).unwrap_or(std::ptr::null()));
+                return unsafe {
+                    verify(
+                        Utf8CStr::from_string(img).as_ptr(),
+                        cert.as_mut()
+                            .map(|x| Utf8CStr::from_string(x).as_ptr())
+                            .unwrap_or(std::ptr::null()),
+                    )
+                };
             }
             Action::Sign(Sign {
                 ref mut img,
                 ref mut args,
             }) => {
                 let (pem, pk8) = match args.get_mut(1..=2) {
-                    Some([pem,pk8]) => (Utf8CStr::from_string(pem).as_ptr(), Utf8CStr::from_string(pk8).as_ptr()),
+                    Some([pem, pk8]) => (
+                        Utf8CStr::from_string(pem).as_ptr(),
+                        Utf8CStr::from_string(pk8).as_ptr(),
+                    ),
                     _ => (std::ptr::null(), std::ptr::null()),
                 };
-                return sign(
-                    Utf8CStr::from_string(img).as_ptr(),
-                    args.first_mut()
-                        .map(|x| Utf8CStr::from_string(x).as_ptr())
-                        .unwrap_or(raw_cstr!("/boot")),
-                    pem, pk8
-                )
+                return unsafe {
+                    sign(
+                        Utf8CStr::from_string(img).as_ptr(),
+                        args.first_mut()
+                            .map(|x| Utf8CStr::from_string(x).as_ptr())
+                            .unwrap_or(raw_cstr!("/boot")),
+                        pem,
+                        pk8,
+                    )
+                };
             }
             Action::Extract(Extract {
                 ref payload,
@@ -353,7 +366,11 @@ pub unsafe extern "C" fn main(
                 ref mut src,
                 ref mut dest,
             }) => {
-                if !hexpatch(file, Utf8CStr::from_string(src), Utf8CStr::from_string(dest)) {
+                if !hexpatch(
+                    file,
+                    Utf8CStr::from_string(src),
+                    Utf8CStr::from_string(dest),
+                ) {
                     Err(log_err!("Failed to patch"))?;
                 }
             }
@@ -368,7 +385,7 @@ pub unsafe extern "C" fn main(
                     0
                 } else {
                     1
-                }
+                };
             }
             Action::Dtb(Dtb {
                 ref mut file,
@@ -381,13 +398,15 @@ pub unsafe extern "C" fn main(
                     0
                 } else {
                     1
-                }
+                };
             }
             Action::Split(Split {
                 no_decompress,
                 ref mut file,
             }) => {
-                return split_image_dtb(Utf8CStr::from_string(file).as_ptr(), no_decompress);
+                return unsafe {
+                    split_image_dtb(Utf8CStr::from_string(file).as_ptr(), no_decompress)
+                };
             }
             Action::Sha1(Sha1 { ref mut file }) => {
                 let file = MappedFile::open(Utf8CStr::from_string(file))?;
@@ -406,31 +425,31 @@ pub unsafe extern "C" fn main(
                 ref mut file,
                 ref mut out,
             }) => {
-                decompress_raw(
-                    Utf8CStr::from_string(file).as_mut_ptr(),
-                    out.as_mut()
-                        .map(|x| Utf8CStr::from_string(x).as_ptr())
-                        .unwrap_or(std::ptr::null()),
-                );
+                unsafe {
+                    decompress_raw(
+                        Utf8CStr::from_string(file).as_mut_ptr(),
+                        out.as_mut()
+                            .map(|x| Utf8CStr::from_string(x).as_ptr())
+                            .unwrap_or(std::ptr::null()),
+                    )
+                };
             }
             Action::Compress(Compress {
                 ref mut file,
                 ref mut format,
                 ref mut out,
             }) => {
-                compress(
-                    Utf8CStr::from_string(format).as_ptr(),
-                    Utf8CStr::from_string(file).as_ptr(),
-                    out.as_mut()
-                        .map(|x| Utf8CStr::from_string(x).as_ptr())
-                        .unwrap_or(std::ptr::null()),
-                );
+                unsafe {
+                    compress(
+                        Utf8CStr::from_string(format).as_ptr(),
+                        Utf8CStr::from_string(file).as_ptr(),
+                        out.as_mut()
+                            .map(|x| Utf8CStr::from_string(x).as_ptr())
+                            .unwrap_or(std::ptr::null()),
+                    )
+                };
             }
         }
     };
-    if res.is_ok() {
-        0
-    } else {
-        1
-    }
+    if res.is_ok() { 0 } else { 1 }
 }
